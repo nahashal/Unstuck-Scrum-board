@@ -1,0 +1,66 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Poppins:wght@500;600;700;800&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    @apply bg-canvas text-slate-800 font-sans antialiased;
+    /* Dotted whiteboard canvas */
+    background-image: radial-gradient(rgba(23, 23, 43, 0.09) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+  h1, h2, h3 {
+    @apply font-display tracking-tight;
+  }
+  h1 { @apply text-ink; }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white rounded-full font-semibold text-sm
+           hover:bg-brand-700 active:bg-brand-800 transition-all duration-150 shadow-pop hover:-translate-y-px
+           disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 px-5 py-2.5 bg-white text-ink rounded-full font-semibold text-sm
+           border border-ink/15 hover:border-ink/30 hover:bg-slate-50 active:bg-slate-100 transition-all duration-150
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-danger {
+    @apply inline-flex items-center gap-2 px-5 py-2.5 bg-bubble-500 text-white rounded-full font-semibold text-sm
+           hover:bg-bubble-700 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center gap-1.5 px-3 py-1.5 text-slate-600 rounded-full text-sm font-medium
+           hover:bg-brand-50 hover:text-brand-700 transition-all duration-150;
+  }
+  .card {
+    @apply bg-white rounded-2xl border border-ink/[0.06] shadow-note p-5;
+  }
+  .input {
+    @apply w-full px-3.5 py-2.5 bg-white border border-ink/10 rounded-xl text-sm text-slate-800 placeholder-slate-400
+           focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all duration-150;
+  }
+  .label {
+    @apply block text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold;
+  }
+  .section-header {
+    @apply font-display text-lg font-bold text-ink mb-4;
+  }
+  /* Multi-colour logo gradient (aqua → blue → violet → pink) */
+  .brand-gradient {
+    background-image: linear-gradient(135deg, #3ee6c5 0%, #3db8f5 30%, #7b2ff7 65%, #f25ab8 100%);
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cfc6e8; border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: #a26cfb; }
