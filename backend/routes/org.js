@@ -15,11 +15,18 @@ const { hashToken } = require('./auth');
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const INVITE_DAYS = 7;
-// Invite links point at FRONTEND_URL, or at the site the admin is using (works on Vercel without extra config)
+// Invite links point at the site the admin is using (the browser's Origin), so a deployed site never
+// hands out localhost links. FRONTEND_URL is only the fallback when the request has no Origin.
+const isLocal = (url) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(url || '');
 const appUrl = (req) => {
-  if (process.env.FRONTEND_URL) return process.env.FRONTEND_URL.replace(/\/$/, '');
+  const origin = (req.get('origin') || '').replace(/\/$/, '');
+  if (/^https?:\/\/[^/\s]+$/i.test(origin)) return origin;
+  const configured = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
   const host = req.get('x-forwarded-host') || req.get('host');
-  return host && !host.startsWith('localhost:5000') ? `${req.protocol}://${host}` : 'http://localhost:5173';
+  const fromHost = host && !host.startsWith('localhost:5000') ? `${req.protocol}://${host}` : '';
+  // Never prefer a localhost FRONTEND_URL over a real deployed host
+  if (configured && !(isLocal(configured) && fromHost && !isLocal(fromHost))) return configured;
+  return fromHost || 'http://localhost:5173';
 };
 
 // Every route here needs an organization
