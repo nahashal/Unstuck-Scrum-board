@@ -15,7 +15,12 @@ const { hashToken } = require('./auth');
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const INVITE_DAYS = 7;
-const appUrl = () => (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+// Invite links point at FRONTEND_URL, or at the site the admin is using (works on Vercel without extra config)
+const appUrl = (req) => {
+  if (process.env.FRONTEND_URL) return process.env.FRONTEND_URL.replace(/\/$/, '');
+  const host = req.get('x-forwarded-host') || req.get('host');
+  return host && !host.startsWith('localhost:5000') ? `${req.protocol}://${host}` : 'http://localhost:5173';
+};
 
 // Every route here needs an organization
 router.use((req, res, next) => {
@@ -180,7 +185,7 @@ router.post('/invites', requireOrgAdmin, async (req, res) => {
       projectRoles: projectRoles.map(pr => ({ project: pr.project, role: pr.role })),
       tokenHash: hashToken(token), expiresAt: new Date(Date.now() + INVITE_DAYS * 86400000), invitedBy: req.user._id,
     });
-    res.status(201).json({ success: true, data: { _id: invite._id, email, expiresAt: invite.expiresAt, link: `${appUrl()}/?invite=${token}` } });
+    res.status(201).json({ success: true, data: { _id: invite._id, email, expiresAt: invite.expiresAt, link: `${appUrl(req)}/?invite=${token}` } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

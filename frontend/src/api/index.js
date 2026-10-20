@@ -1,7 +1,11 @@
 import axios from 'axios';
 
+// Local dev talks to the Express server on :5000; in production the API is served from the same site at /api.
+// VITE_API_URL overrides both (e.g. when the backend is hosted elsewhere).
+const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
+
 const api = axios.create({
-  baseURL: 'http://localhost:5000/api',
+  baseURL: API_URL,
   timeout: 30000,
   withCredentials: true, // send the httpOnly session cookie
   headers: { 'Content-Type': 'application/json' },
@@ -18,7 +22,9 @@ api.interceptors.response.use(
       return Promise.reject(new Error('The request took too long and was cancelled. Please try again.'));
     }
     if (!err.response) {
-      return Promise.reject(new Error('Cannot reach the Unstuck server at http://localhost:5000. Make sure the backend and MongoDB are running.'));
+      return Promise.reject(new Error(import.meta.env.DEV
+        ? 'Cannot reach the Unstuck server at http://localhost:5000. Make sure the backend and MongoDB are running.'
+        : 'Cannot reach the Unstuck server. Please check your connection and try again.'));
     }
     // Session missing or expired: tell the app to show the sign-in screen
     if (err.response.status === 401 && !err.config?.url?.startsWith('/auth/')) {

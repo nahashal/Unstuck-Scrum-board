@@ -26,12 +26,16 @@ async function generate(prompt, { json = true, temperature = 0.2, timeoutMs = 30
     .split(',').map(m => m.trim()).filter(Boolean);
   const genAI = new GoogleGenerativeAI(apiKey);
 
+  // Overall budget so the request finishes inside a 60s serverless limit, even when falling back
+  const deadline = Date.now() + Number(process.env.AI_TOTAL_BUDGET_MS || 50000);
   let lastErr;
   for (const modelName of models) {
+    const remaining = deadline - Date.now();
+    if (remaining < 3000) break;
     try {
       const generationConfig = { temperature };
       if (json) generationConfig.responseMimeType = 'application/json';
-      const model = genAI.getGenerativeModel({ model: modelName, generationConfig }, { timeout: timeoutMs });
+      const model = genAI.getGenerativeModel({ model: modelName, generationConfig }, { timeout: Math.min(timeoutMs, remaining) });
       const result = await model.generateContent(prompt);
       return { text: result.response.text().trim(), model: modelName };
     } catch (err) {
