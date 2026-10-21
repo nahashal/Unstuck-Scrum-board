@@ -19,6 +19,12 @@ const INVITE_DAYS = 7;
 // hands out localhost links. FRONTEND_URL is only the fallback when the request has no Origin.
 const isLocal = (url) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(url || '');
 const appUrl = (req) => {
+  // 1. An explicitly configured public address (ignored if it's a leftover localhost value)
+  const configuredUrl = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
+  if (configuredUrl && !isLocal(configuredUrl)) return configuredUrl;
+  // 2. On Vercel: the project's production domain, not the per-deployment URL the admin may be on
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  // 3. Otherwise the site the admin is using
   const origin = (req.get('origin') || '').replace(/\/$/, '');
   if (/^https?:\/\/[^/\s]+$/i.test(origin)) return origin;
   const configured = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
