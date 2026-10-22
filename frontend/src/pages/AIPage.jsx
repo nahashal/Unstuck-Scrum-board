@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Brain, Zap, CheckCircle2, XCircle, AlertTriangle, ChevronDown, ChevronUp, Loader2, Edit3, Link2, Undo2, History } from 'lucide-react';
 import { aiApi, updatesApi, teamApi, blockersApi, tasksApi } from '../api';
 import Alert from '../components/Alert';
@@ -234,33 +234,49 @@ export default function AIPage({ aiState, setAiState }) {
   const patchState = useCallback((patch) => setAiState(s => ({ ...s, ...patch })), [setAiState]);
   const setMF = (key, val) => patchState({ manualForm: { ...manualForm, [key]: val } });
 
-  const load = useCallback(async () => {
+  // Everyone sees every update and its saved analysis; who may run/confirm is checked per action.
+  // `silent` refreshes in the background without the loading spinner.
+  const load = useCallback(async ({ silent = false } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const [uRes, mRes, tRes] = await Promise.all([
         updatesApi.getAll(), teamApi.getAll(), tasksApi.getAll()
       ]);
-      // Developers analyze their own updates; Scrum Masters+ can analyze anyone's
-      const analyzable = uRes.data.filter(u => can.canAnalyzeUpdate(u));
-      setUpdates(analyzable);
+      setUpdates(uRes.data);
       setMembers(mRes.data);
       setTasks(tRes.data);
       // After a refresh, reopen the most recently analyzed update so its saved findings are visible
       setAiState(s => {
-        if (s.selectedUpdate && analyzable.some(u => u._id === s.selectedUpdate)) return s;
-        const latest = [...analyzable]
+        if (s.selectedUpdate && uRes.data.some(u => u._id === s.selectedUpdate)) return s;
+        const latest = [...uRes.data]
           .filter(u => u.aiAnalysis?.analyzedAt)
           .sort((a, b) => new Date(b.aiAnalysis.analyzedAt) - new Date(a.aiAnalysis.analyzedAt))[0];
         return { ...s, selectedUpdate: latest ? latest._id : '' };
       });
     } catch (e) {
-      setError(e.message);
+      if (!silent) setError(e.message);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  }, [setAiState, can]);
+  }, [setAiState]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Pick up analyses and decisions made by other people: refresh every 15s while the tab is visible,
+  // and immediately when the user comes back to the tab. Skipped while this user is analyzing.
+  const busyRef = useRef(false);
+  busyRef.current = analyzing;
+  useEffect(() => {
+    const refresh = () => { if (!busyRef.current && document.visibilityState === 'visible') load({ silent: true }); };
+    const timer = setInterval(refresh, 15000);
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener('focus', refresh);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', refresh);
+      window.removeEventListener('focus', refresh);
+    };
+  }, [load]);
 
   const selectedUpdateObj = updates.find(u => u._id === selectedUpdate);
   const savedAnalysis = selectedUpdateObj?.aiAnalysis?.analyzedAt ? selectedUpdateObj.aiAnalysis : null;
@@ -422,7 +438,7 @@ export default function AIPage({ aiState, setAiState }) {
           </div>
         ) : (
           <div>
-            <label className="label">Select a Daily Update to Analyze</label>
+            <label className="label">Select a Daily Update</label>
             <select id="ai-update-select" className="input" value={selectedUpdate} onChange={e => patchState({ selectedUpdate: e.target.value })}>
               <option value="">— Choose an update —</option>
               {updates.map(u => (
@@ -454,6 +470,11 @@ export default function AIPage({ aiState, setAiState }) {
         )}
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
+          {!manualMode && selectedUpdateObj && !can.canAnalyzeUpdate(selectedUpdateObj) ? (
+            <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+              You can view this update's analysis. Only its author or a Scrum Master can run the AI on it.
+            </p>
+          ) : (
           <button
             id="analyze-btn"
             className="btn-primary"
@@ -466,8 +487,9 @@ export default function AIPage({ aiState, setAiState }) {
               <><Brain className="w-4 h-4" /> {!manualMode && savedAnalysis ? 'Re-run AI Analysis' : 'Run AI Analysis'}</>
             )}
           </button>
+          )}
           {analyzing && <p className="text-xs text-slate-400 animate-pulse-soft">This can take up to a minute...</p>}
-          {!analyzing && !manualMode && savedAnalysis && (
+          {!analyzing && !manualMode && savedAnalysis && can.canAnalyzeUpdate(selectedUpdateObj) && (
             <p className="text-xs text-slate-400">
               Re-running replaces the findings below. Confirmed blockers stay on the Blockers page.
             </p>
