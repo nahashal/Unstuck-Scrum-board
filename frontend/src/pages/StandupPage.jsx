@@ -6,6 +6,7 @@ import Alert from '../components/Alert';
 import Avatar from '../components/Avatar';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { RoleBadge } from '../components/RoleBits';
+import useLiveRefresh from '../utils/useLiveRefresh';
 import { formatDateTime } from '../utils/helpers';
 
 const todayKey = () => {
@@ -98,6 +99,8 @@ export default function StandupPage() {
     finally { setLoading(false); }
   }, [day]);
   useEffect(() => { load(); }, [load]);
+  // Live: see updates arrive during the stand-up
+  useLiveRefresh(() => standupApi.get(day).then(res => setData(res.data)), { paused: generating });
 
   const generate = async () => {
     setGenerating(true);

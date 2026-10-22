@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { LayoutDashboard, ListTodo, PlayCircle, CheckCircle2, ShieldAlert, TrendingUp, MessageSquare, CheckSquare } from 'lucide-react';
 import { dashboardApi } from '../api';
+import useLiveRefresh from '../utils/useLiveRefresh';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Alert from '../components/Alert';
 import Avatar from '../components/Avatar';
@@ -51,6 +52,8 @@ export default function DashboardPage() {
   };
 
   useEffect(() => { load(); }, []);
+  // Live: pick up other people's changes quietly
+  useLiveRefresh(() => dashboardApi.get().then(res => setData(res.data)));
 
   if (loading) return <LoadingSpinner message="Loading dashboard..." />;
 

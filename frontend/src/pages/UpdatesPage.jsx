@@ -9,6 +9,7 @@ import Comments from '../components/Comments';
 import LoadingSpinner, { InlineLoader } from '../components/LoadingSpinner';
 import { ProgressBar, EmptyState } from '../components/RoleBits';
 import { formatDateTime, statusConfig } from '../utils/helpers';
+import useLiveRefresh from '../utils/useLiveRefresh';
 
 const STATUSES = ['To Do', 'In Progress', 'In Review', 'Done'];
 
@@ -173,6 +174,8 @@ function MorningTab({ tasks, onNavigateToAI, notify }) {
   useEffect(() => {
     updatesApi.getAll().then(r => setUpdates(r.data)).catch(e => notify('error', e.message)).finally(() => setLoading(false));
   }, [notify]);
+  // Live: teammates' new updates, edits and review marks appear without a reload
+  useLiveRefresh(() => updatesApi.getAll().then(r => setUpdates(r.data)), { paused: submitting });
 
   const replace = (u) => setUpdates(list => list.map(x => x._id === u._id ? u : x));
 
@@ -525,6 +528,8 @@ function EveningTab({ tasks, reloadTasks, notify }) {
   useEffect(() => {
     eveningApi.getAll().then(r => setEvenings(r.data)).catch(e => notify('error', e.message)).finally(() => setLoading(false));
   }, [notify]);
+  // Live: teammates' check-ins and estimate decisions appear without a reload
+  useLiveRefresh(() => eveningApi.getAll().then(r => setEvenings(r.data)), { paused: !!autoAnalyzing });
 
   const replace = (ev) => { setEvenings(list => list.map(x => x._id === ev._id ? ev : x)); reloadTasks(); };
 
@@ -606,6 +611,7 @@ export default function UpdatesPage({ onNavigateToAI }) {
     tasksApi.getAll().then(r => setTasks(r.data)).catch(e => notify('error', e.message));
   }, [notify]);
   useEffect(() => { reloadTasks(); }, [reloadTasks]);
+  useLiveRefresh(() => tasksApi.getAll().then(r => setTasks(r.data)));
 
   const openTasks = tasks.filter(t => t.status !== 'Done');
 

@@ -7,6 +7,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import { InlineLoader } from '../components/LoadingSpinner';
 import Avatar from '../components/Avatar';
 import { useSession } from '../context/SessionContext';
+import useLiveRefresh from '../utils/useLiveRefresh';
 import { statusConfig, formatDate, formatDateTime } from '../utils/helpers';
 
 function ActionCard({ action, onEdit }) {
@@ -186,6 +187,12 @@ export default function ActionsPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  // Live: status changes by other people appear without a reload
+  useLiveRefresh(async () => {
+    const [aRes, bRes] = await Promise.all([actionsApi.getAll(), blockersApi.getAll()]);
+    setActions(aRes.data);
+    setBlockers(bRes.data);
+  }, { paused: saving });
 
   const handleSubmit = async (formData) => {
     setSaving(true);

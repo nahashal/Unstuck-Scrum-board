@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { ShieldAlert, Plus, Pencil, CheckCircle2, CheckSquare, ListPlus } from 'lucide-react';
 import { blockersApi, teamApi, tasksApi, actionsApi } from '../api';
 import { ActionForm } from './ActionsPage';
+import useLiveRefresh from '../utils/useLiveRefresh';
 import Alert from '../components/Alert';
 import Modal from '../components/Modal';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -216,6 +217,12 @@ export default function BlockersPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  // Live: new and resolved blockers and their action items appear without a reload
+  useLiveRefresh(async () => {
+    const [bRes, aRes] = await Promise.all([blockersApi.getAll(), actionsApi.getAll()]);
+    setBlockers(bRes.data);
+    setActions(aRes.data);
+  }, { paused: saving || savingAction });
 
   const createAction = async (formData) => {
     setSavingAction(true);

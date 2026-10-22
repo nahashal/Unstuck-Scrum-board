@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Plus, Pencil, Trash2, ShieldAlert, Calendar, User, AlertTriangle } from 'lucide-react';
 import { tasksApi, teamApi, sprintsApi } from '../api';
+import useLiveRefresh from '../utils/useLiveRefresh';
 import { useSession } from '../context/SessionContext';
 import Comments from '../components/Comments';
 import { ProgressBar } from '../components/RoleBits';
@@ -278,6 +279,12 @@ export default function BoardPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  // Live: other people's task changes appear without a reload (keeps the chosen sprint filter)
+  useLiveRefresh(async () => {
+    const [tasksRes, sprintsRes] = await Promise.all([tasksApi.getAll(), sprintsApi.getAll()]);
+    setTasks(tasksRes.data);
+    setSprints(sprintsRes.data);
+  }, { paused: saving });
 
   const openCreate = () => { setEditTask(null); setModalOpen(true); };
   const openEdit = (task) => { setEditTask(task); setModalOpen(true); };
