@@ -7,6 +7,7 @@ import Avatar from '../components/Avatar';
 import Modal from '../components/Modal';
 import LoadingSpinner, { InlineLoader } from '../components/LoadingSpinner';
 import { RoleBadge, RoleSelect, EmptyState } from '../components/RoleBits';
+import DeleteProjectModal from '../components/DeleteProjectModal';
 import { ORG_ROLES, PROJECT_ROLES } from '../utils/permissions';
 import { formatDate } from '../utils/helpers';
 
@@ -341,8 +342,17 @@ function ProjectsTab({ projects, setProjects, teams, members, notify }) {
 
   const open = (id) => { switchProject(id); navigate('dashboard'); };
 
+  const [deleting, setDeleting] = useState(null);
+  const onDeleted = async (p) => {
+    setProjects(list => list.filter(x => x._id !== p._id));
+    setDeleting(null);
+    await refreshSession();
+    notify('success', `Project ${p.key} and all of its data were deleted.`);
+  };
+
   return (
     <div className="space-y-6">
+      <DeleteProjectModal project={deleting} onClose={() => setDeleting(null)} onDeleted={onDeleted} />
       {teams.length === 0 ? (
         <Alert type="info" message="Create a team first — every project belongs to a team." />
       ) : (
@@ -393,7 +403,12 @@ function ProjectsTab({ projects, setProjects, teams, members, notify }) {
                 </div>
                 {p.status === 'archived' && <span className="badge bg-slate-100 text-slate-500">Archived</span>}
               </div>
-              <button className="btn-secondary text-xs px-3 py-1.5 mt-4" onClick={() => open(p._id)}>Open project</button>
+              <div className="flex gap-2 mt-4">
+                <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => open(p._id)}>Open project</button>
+                <button className="btn-ghost text-xs hover:!bg-bubble-50 hover:!text-bubble-700" onClick={() => setDeleting(p)}>
+                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                </button>
+              </div>
             </div>
           ))}
         </div>

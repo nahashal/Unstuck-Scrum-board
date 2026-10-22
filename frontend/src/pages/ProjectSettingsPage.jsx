@@ -6,6 +6,7 @@ import Alert from '../components/Alert';
 import Avatar from '../components/Avatar';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { RoleSelect, EmptyState } from '../components/RoleBits';
+import DeleteProjectModal from '../components/DeleteProjectModal';
 import { PROJECT_ROLES } from '../utils/permissions';
 import { formatDate } from '../utils/helpers';
 
@@ -24,7 +25,8 @@ const SPRINT_STYLES = {
 const toInputDate = (d) => (d ? new Date(d).toISOString().split('T')[0] : '');
 
 function DetailsTab({ project, setProject, notify }) {
-  const { refreshSession } = useSession();
+  const { refreshSession, can, navigate } = useSession();
+  const [deleting, setDeleting] = useState(false);
   const [form, setForm] = useState({ name: project.name, description: project.description || '', sprintLengthDays: project.sprintSettings?.lengthDays || 14 });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const save = async (e) => {
@@ -76,6 +78,20 @@ function DetailsTab({ project, setProject, notify }) {
         </div>
         <button className="btn-secondary" onClick={toggleArchive}><Archive className="w-4 h-4" />{project.status === 'archived' ? 'Restore' : 'Archive'}</button>
       </div>
+      {can.isOrgAdmin && (
+        <div className="card flex flex-wrap items-center gap-3 justify-between border border-bubble-200">
+          <div>
+            <p className="font-semibold text-bubble-700">Delete project</p>
+            <p className="text-xs text-slate-500">Permanently removes the project and everything in it. Only Organization Admins can do this.</p>
+          </div>
+          <button className="btn-danger" onClick={() => setDeleting(true)}><Trash2 className="w-4 h-4" /> Delete</button>
+        </div>
+      )}
+      <DeleteProjectModal
+        project={deleting ? project : null}
+        onClose={() => setDeleting(false)}
+        onDeleted={async () => { setDeleting(false); await refreshSession(); navigate('dashboard'); }}
+      />
     </div>
   );
 }

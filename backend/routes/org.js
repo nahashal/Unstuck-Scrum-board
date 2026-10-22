@@ -9,6 +9,12 @@ const Project = require('../models/Project');
 const Invite = require('../models/Invite');
 const Task = require('../models/Task');
 const ActionItem = require('../models/ActionItem');
+const DailyUpdate = require('../models/DailyUpdate');
+const EveningUpdate = require('../models/EveningUpdate');
+const Blocker = require('../models/Blocker');
+const Sprint = require('../models/Sprint');
+const Comment = require('../models/Comment');
+const StandupSummary = require('../models/StandupSummary');
 const { PROJECT_ROLES } = require('../models/Project');
 const { requireOrgAdmin, sameId, forbid } = require('../middleware/permissions');
 const { hashToken } = require('./auth');
@@ -333,6 +339,31 @@ router.post('/projects', requireOrgAdmin, async (req, res) => {
     res.status(201).json({ success: true, data: await Project.findById(project._id).populate('team', 'name').populate('members.member', 'name') });
   } catch (err) {
     if (err.code === 11000) return res.status(409).json({ success: false, message: 'Another project already uses that key.' });
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// DELETE /api/org/projects/:id — permanently deletes a project and everything in it (Org Admin).
+// Body must repeat the project's key to confirm.
+router.delete('/projects/:id', requireOrgAdmin, async (req, res) => {
+  try {
+    const project = mongoose.isValidObjectId(req.params.id) ? await Project.findOne({ _id: req.params.id, organization: orgId(req) }) : null;
+    if (!project) return res.status(404).json({ success: false, message: 'Project not found.' });
+    if (String(req.body?.confirmKey || '').trim().toUpperCase() !== project.key) {
+      return res.status(400).json({ success: false, message: `Type the project key (${project.key}) to confirm deletion.` });
+    }
+    const byProject = { project: project._id };
+    await Promise.all([
+      Task.deleteMany(byProject), DailyUpdate.deleteMany(byProject), EveningUpdate.deleteMany(byProject),
+      Blocker.deleteMany(byProject), ActionItem.deleteMany(byProject), Sprint.deleteMany(byProject),
+      Comment.deleteMany(byProject), StandupSummary.deleteMany(byProject),
+      // Pending invites keep working, just without this project
+      Invite.updateMany({ organization: orgId(req), 'projectRoles.project': project._id }, { $pull: { projectRoles: { project: project._id } } }),
+      TeamMember.updateMany({ lastProject: project._id }, { lastProject: null }),
+    ]);
+    await project.deleteOne();
+    res.json({ success: true });
+  } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });

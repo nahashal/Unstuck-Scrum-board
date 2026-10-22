@@ -157,6 +157,7 @@ export const orgApi = {
   deleteTeam: (id) => api.delete(`/org/teams/${id}`),
   projects: () => api.get('/org/projects'),
   createProject: (data) => api.post('/org/projects', data),
+  deleteProject: (id, confirmKey) => api.delete(`/org/projects/${id}`, { data: { confirmKey } }),
 };
 
 // ─── Platform (Platform Admin) ────────────────────────────────────────────
