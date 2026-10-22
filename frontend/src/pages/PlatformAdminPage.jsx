@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Globe2, Building2, Users, SlidersHorizontal, Search, ShieldCheck, Power, Trash2 } from 'lucide-react';
+import { Globe2, Building2, Users, SlidersHorizontal, Search, ShieldCheck, Power, Trash2, Plus } from 'lucide-react';
 import { platformApi } from '../api';
 import { useSession } from '../context/SessionContext';
 import Alert from '../components/Alert';
@@ -24,7 +24,69 @@ function Stat({ label, value, tone }) {
   );
 }
 
-function OrgsTab({ notify }) {
+// Platform Admin: create an organization and set up its first Organization Admin
+function NewOrgForm({ notify, onCreated }) {
+  const [form, setForm] = useState({ name: '', adminEmail: '' });
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState(null);
+  const [copied, setCopied] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const d = (await platformApi.createOrganization(form)).data;
+      setForm({ name: '', adminEmail: '' });
+      onCreated();
+      if (d.mode === 'assigned') {
+        setResult(null);
+        notify('success', `${d.organization.name} created. ${d.admin.name} is its Organization Admin and will see it the next time they load the app.`);
+      } else {
+        setResult(d);
+        setCopied(false);
+        notify('success', `${d.organization.name} created. An Organization Admin invite was issued to ${d.email}.`);
+      }
+    } catch (err) { notify('error', err.message); } finally { setSaving(false); }
+  };
+  const copy = async () => { try { await navigator.clipboard.writeText(result.link); setCopied(true); } catch { /* copy manually */ } };
+
+  const resultLine = !result ? '' : result.delivery?.sent
+    ? `Admin invite emailed to ${result.email}`
+    : result.delivery?.configured
+      ? `The email to ${result.email} couldn't be sent${result.delivery.error ? ` (${result.delivery.error})` : ''}. Share this link instead:`
+      : `Admin invite link for ${result.email}`;
+
+  return (
+    <form onSubmit={submit} className="card space-y-4">
+      <h3 className="font-bold text-ink flex items-center gap-2"><Plus className="w-4 h-4 text-brand-500" /> New organization</h3>
+      <div className="grid md:grid-cols-2 gap-4">
+        <div>
+          <label className="label" htmlFor="neworg-name-p">Organization name *</label>
+          <input id="neworg-name-p" className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Acme Software" required />
+        </div>
+        <div>
+          <label className="label" htmlFor="neworg-admin">First Organization Admin's email *</label>
+          <input id="neworg-admin" type="email" className="input" value={form.adminEmail} onChange={e => setForm(f => ({ ...f, adminEmail: e.target.value }))} required />
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <button className="btn-primary" disabled={saving}>{saving ? <InlineLoader size="sm" /> : <Building2 className="w-4 h-4" />} Create organization</button>
+        <p className="text-xs text-slate-400">New people get an admin invite (emailed when Brevo is set up). An existing account with no organization becomes its admin straight away.</p>
+      </div>
+      {result && (
+        <div className="bg-mint-50 border border-mint-200 rounded-2xl p-3 space-y-2">
+          <p className="text-sm font-semibold text-mint-700">{resultLine}</p>
+          <div className="flex gap-2">
+            <input className="input text-xs font-mono" readOnly value={result.link} onFocus={e => e.target.select()} />
+            <button type="button" className="btn-secondary" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
+          </div>
+        </div>
+      )}
+    </form>
+  );
+}
+
+function OrgsTab({ notify, reloadKey }) {
   const { user, refreshSession } = useSession();
   const [orgs, setOrgs] = useState(null);
   const [deleting, setDeleting] = useState(null);
@@ -42,7 +104,7 @@ function OrgsTab({ notify }) {
       setDeleting(null);
     } catch (e) { notify('error', e.message); } finally { setBusy(false); }
   };
-  useEffect(() => { platformApi.organizations().then(r => setOrgs(r.data)).catch(e => notify('error', e.message)); }, [notify]);
+  useEffect(() => { platformApi.organizations().then(r => setOrgs(r.data)).catch(e => notify('error', e.message)); }, [notify, reloadKey]);
   const toggle = async (o) => {
     const status = o.status === 'active' ? 'suspended' : 'active';
     try {
@@ -236,6 +298,8 @@ function SettingsTab({ notify }) {
 
 export default function PlatformAdminPage() {
   const [tab, setTab] = useState('orgs');
+  // Bumped after creating an organization so the list reloads
+  const [orgsKey, setOrgsKey] = useState(0);
   const [stats, setStats] = useState(null);
   const [alert, setAlert] = useState(null);
   const notify = useCallback((type, message) => setAlert({ type, message }), []);
@@ -265,7 +329,12 @@ export default function PlatformAdminPage() {
           );
         })}
       </div>
-      {tab === 'orgs' && <OrgsTab notify={notify} />}
+      {tab === 'orgs' && (
+        <div className="space-y-6">
+          <NewOrgForm notify={notify} onCreated={() => setOrgsKey(k => k + 1)} />
+          <OrgsTab notify={notify} reloadKey={orgsKey} />
+        </div>
+      )}
       {tab === 'access' && <AccessTab notify={notify} />}
       {tab === 'settings' && <SettingsTab notify={notify} />}
     </div>

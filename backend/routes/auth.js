@@ -30,7 +30,7 @@ function tooManyAttempts(key) {
   return entry.count > MAX_ATTEMPTS;
 }
 
-const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
+const { hashToken } = require('../lib/invites');
 
 // Everything the frontend needs to know about the signed-in member and what they can access
 async function sessionPayload(member) {

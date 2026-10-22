@@ -166,6 +166,7 @@ export const orgApi = {
 export const platformApi = {
   stats: () => api.get('/platform/stats'),
   organizations: () => api.get('/platform/organizations'),
+  createOrganization: (data) => api.post('/platform/organizations', data),
   setOrgStatus: (id, status) => api.patch(`/platform/organizations/${id}`, { status }),
   deleteOrganization: (id, confirmName) => api.delete(`/platform/organizations/${id}`, { data: { confirmName } }),
   deleteUser: (id) => api.delete(`/platform/users/${id}`),

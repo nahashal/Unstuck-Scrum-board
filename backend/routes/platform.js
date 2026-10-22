@@ -15,6 +15,7 @@ const ActionItem = require('../models/ActionItem');
 const Sprint = require('../models/Sprint');
 const Comment = require('../models/Comment');
 const StandupSummary = require('../models/StandupSummary');
+const { hashToken, newToken, inviteExpiry, inviteLink, deliverInvite } = require('../lib/invites');
 const { requirePlatformAdmin, sameId } = require('../middleware/permissions');
 
 // Platform Admins manage organizations and access — never the contents of projects
@@ -47,6 +48,45 @@ router.get('/organizations', async (req, res) => {
     const m = new Map(memberCounts.map(c => [c._id.toString(), c.n]));
     const p = new Map(projectCounts.map(c => [c._id.toString(), c.n]));
     res.json({ success: true, data: orgs.map(o => ({ ...o, memberCount: m.get(o._id.toString()) || 0, projectCount: p.get(o._id.toString()) || 0 })) });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/platform/organizations — create an organization and set up its first Organization Admin.
+// An existing account without an organization becomes its admin at once; anyone else gets an admin invite.
+router.post('/organizations', async (req, res) => {
+  try {
+    const name = String(req.body.name || '').trim();
+    const adminEmail = String(req.body.adminEmail || '').trim().toLowerCase();
+    if (!name) return res.status(400).json({ success: false, message: 'Organization name is required.' });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) {
+      return res.status(400).json({ success: false, message: "Enter the email of the organization's first admin." });
+    }
+
+    const existing = await TeamMember.findOne({ email: adminEmail });
+    if (existing?.organization) {
+      return res.status(409).json({ success: false, message: `${existing.name} already belongs to another organization. Each account belongs to one organization.` });
+    }
+
+    const org = await Organization.create({ name, createdBy: existing ? existing._id : req.user._id });
+
+    if (existing) {
+      existing.organization = org._id;
+      existing.orgRole = 'org_admin';
+      existing.lastProject = null;
+      await existing.save();
+      return res.status(201).json({ success: true, data: { organization: org, admin: { name: existing.name, email: existing.email }, mode: 'assigned' } });
+    }
+
+    const token = newToken();
+    const invite = await Invite.create({
+      organization: org._id, email: adminEmail, orgRole: 'org_admin',
+      tokenHash: hashToken(token), expiresAt: inviteExpiry(), invitedBy: req.user._id,
+    });
+    const link = inviteLink(req, token);
+    const delivery = await deliverInvite({ invite, link, orgName: org.name, inviterName: req.user.name });
+    res.status(201).json({ success: true, data: { organization: org, mode: 'invited', email: adminEmail, link, expiresAt: invite.expiresAt, delivery } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
