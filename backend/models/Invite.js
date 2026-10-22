@@ -17,6 +17,9 @@ const InviteSchema = new mongoose.Schema({
   invitedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'TeamMember', required: true },
   acceptedAt: { type: Date, default: null },
   revokedAt: { type: Date, default: null },
+  // Outcome of the last invitation email (Brevo); the link can always be shared manually too
+  emailSentAt: { type: Date, default: null },
+  emailError: { type: String, default: null },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Invite', InviteSchema);

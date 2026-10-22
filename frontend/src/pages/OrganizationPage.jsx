@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Building2, Users, Mail, Layers, FolderKanban, Settings, Copy, Check, Trash2, Plus, UserMinus, Power } from 'lucide-react';
+import { Building2, Users, Mail, MailCheck, Send, RotateCw, Layers, FolderKanban, Settings, Copy, Check, Trash2, Plus, UserMinus, Power } from 'lucide-react';
 import { orgApi } from '../api';
 import { useSession } from '../context/SessionContext';
 import Alert from '../components/Alert';
@@ -132,10 +132,27 @@ function InvitesTab({ teams, projects, notify }) {
   const [created, setCreated] = useState(null);
   const [copied, setCopied] = useState(false);
 
+  // Whether the server emails invites automatically (Brevo configured)
+  const [emailOn, setEmailOn] = useState(false);
+  const [resending, setResending] = useState(null);
+
   const load = useCallback(async () => {
     try { setInvites((await orgApi.invites()).data); } catch (e) { notify('error', e.message); } finally { setLoading(false); }
   }, [notify]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { orgApi.emailStatus().then(r => setEmailOn(r.data.configured)).catch(() => {}); }, []);
+
+  const resend = async (inv) => {
+    setResending(inv._id);
+    try {
+      const res = await orgApi.resendInvite(inv._id);
+      setCreated(res.data);
+      setCopied(false);
+      load();
+      if (res.data.delivery?.sent) notify('success', `Invite emailed again to ${inv.email}. The previous link no longer works.`);
+      else notify('error', `New link created, but the email wasn't sent${res.data.delivery?.error ? `: ${res.data.delivery.error}` : '.'} Share the link below instead.`);
+    } catch (e) { notify('error', e.message); } finally { setResending(null); }
+  };
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -200,12 +217,26 @@ function InvitesTab({ teams, projects, notify }) {
           )}
         </div>
         <div className="flex items-center gap-3">
-          <button className="btn-primary" disabled={saving}>{saving ? <InlineLoader size="sm" /> : <Plus className="w-4 h-4" />} Create invite link</button>
-          <p className="text-xs text-slate-400">Links work once and expire after 7 days. Unstuck doesn't send email — share the link yourself.</p>
+          <button className="btn-primary" disabled={saving}>
+            {saving ? <InlineLoader size="sm" /> : emailOn ? <Send className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+            {emailOn ? 'Send invite' : 'Create invite link'}
+          </button>
+          <p className="text-xs text-slate-400">
+            {emailOn
+              ? 'The invite is emailed to them automatically. Links work once and expire after 7 days.'
+              : "Links work once and expire after 7 days. Email isn't set up, so share the link yourself."}
+          </p>
         </div>
         {created && (
           <div className="bg-mint-50 border border-mint-200 rounded-2xl p-3 space-y-2">
-            <p className="text-sm font-semibold text-mint-700">Invite link for {created.email}</p>
+            {created.delivery?.sent && (
+              <p className="text-sm font-semibold text-mint-700 flex items-center gap-1.5"><MailCheck className="w-4 h-4" /> Invite emailed to {created.email}</p>
+            )}
+            {created.delivery?.configured && !created.delivery.sent && (
+              <p className="text-sm font-semibold text-bubble-700">The email to {created.email} couldn't be sent{created.delivery.error ? ` (${created.delivery.error})` : ''}. Share this link with them instead:</p>
+            )}
+            {!created.delivery?.configured && <p className="text-sm font-semibold text-mint-700">Invite link for {created.email}</p>}
+            {created.delivery?.sent && <p className="text-xs text-slate-500">You can also share the link directly if it doesn't arrive (check spam):</p>}
             <div className="flex gap-2">
               <input className="input text-xs font-mono" readOnly value={created.link} onFocus={e => e.target.select()} />
               <button type="button" className="btn-secondary" onClick={copy}>{copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}{copied ? 'Copied' : 'Copy'}</button>
@@ -223,6 +254,8 @@ function InvitesTab({ teams, projects, notify }) {
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold text-ink text-sm">{i.email}</p>
                   <p className="text-xs text-slate-400">Invited by {i.invitedBy?.name || '—'} · expires {formatDate(i.expiresAt)}</p>
+                  {i.emailSentAt && !i.emailError && <p className="text-xs text-mint-700 flex items-center gap-1 mt-0.5"><MailCheck className="w-3 h-3" /> Emailed {formatDate(i.emailSentAt)}</p>}
+                  {i.emailError && <p className="text-xs text-bubble-700 mt-0.5">Email failed: {i.emailError}</p>}
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   <RoleBadge role={i.orgRole} />
@@ -231,6 +264,11 @@ function InvitesTab({ teams, projects, notify }) {
                     <span key={pr.project._id} className="badge bg-white border border-ink/10 text-slate-600">{pr.project.key} · {pr.role.replace('_', ' ')}</span>
                   ))}
                 </div>
+                {emailOn && (
+                  <button className="btn-ghost text-xs" disabled={resending === i._id} onClick={() => resend(i)} title="Sends a new link; the old one stops working">
+                    {resending === i._id ? <InlineLoader size="sm" /> : <RotateCw className="w-3.5 h-3.5" />} Resend email
+                  </button>
+                )}
                 <button className="btn-ghost text-xs" onClick={() => revoke(i._id)}><Trash2 className="w-3.5 h-3.5" /> Revoke</button>
               </div>
             ))}

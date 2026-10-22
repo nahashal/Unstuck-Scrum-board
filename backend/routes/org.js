@@ -18,6 +18,7 @@ const StandupSummary = require('../models/StandupSummary');
 const { PROJECT_ROLES } = require('../models/Project');
 const { requireOrgAdmin, sameId, forbid } = require('../middleware/permissions');
 const { hashToken } = require('./auth');
+const { isEmailConfigured, sendEmail, inviteEmail } = require('../lib/email');
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const INVITE_DAYS = 7;
@@ -204,10 +205,64 @@ router.post('/invites', requireOrgAdmin, async (req, res) => {
       projectRoles: projectRoles.map(pr => ({ project: pr.project, role: pr.role })),
       tokenHash: hashToken(token), expiresAt: new Date(Date.now() + INVITE_DAYS * 86400000), invitedBy: req.user._id,
     });
-    res.status(201).json({ success: true, data: { _id: invite._id, email, expiresAt: invite.expiresAt, link: `${appUrl(req)}/?invite=${token}` } });
+    const link = `${appUrl(req)}/?invite=${token}`;
+    const delivery = await deliverInvite(req, invite, link);
+    res.status(201).json({ success: true, data: { _id: invite._id, email, expiresAt: invite.expiresAt, link, delivery } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
+});
+
+// Emails the invite link through Brevo when configured; records the outcome on the invite.
+// Returns { configured, sent, error } — the link is always returned too, so a failed email never blocks inviting.
+async function deliverInvite(req, invite, link) {
+  if (!isEmailConfigured()) return { configured: false, sent: false, error: null };
+  await invite.populate('projectRoles.project', 'name');
+  try {
+    const { subject, html, text } = inviteEmail({
+      orgName: req.org.name,
+      inviterName: req.user.name,
+      link,
+      orgRole: invite.orgRole,
+      projectRoles: invite.projectRoles.filter(pr => pr.project).map(pr => ({ projectName: pr.project.name, role: pr.role })),
+      expiresAt: invite.expiresAt,
+    });
+    await sendEmail({ to: invite.email, subject, html, text });
+    invite.emailSentAt = new Date();
+    invite.emailError = null;
+    await invite.save();
+    return { configured: true, sent: true, error: null };
+  } catch (err) {
+    console.warn(`[Email] Invite to ${invite.email} failed: ${err.message}`);
+    invite.emailError = err.message.slice(0, 300);
+    await invite.save();
+    return { configured: true, sent: false, error: err.message };
+  }
+}
+
+// POST /api/org/invites/:id/resend — issues a fresh link (the old one stops working) and emails it (Org Admin)
+router.post('/invites/:id/resend', requireOrgAdmin, async (req, res) => {
+  try {
+    const invite = mongoose.isValidObjectId(req.params.id)
+      ? await Invite.findOne({ _id: req.params.id, organization: orgId(req), acceptedAt: null, revokedAt: null })
+      : null;
+    if (!invite) return res.status(404).json({ success: false, message: 'Invite not found.' });
+    // Only a hash of the code is stored, so resending means issuing a new code
+    const token = crypto.randomBytes(32).toString('base64url');
+    invite.tokenHash = hashToken(token);
+    invite.expiresAt = new Date(Date.now() + INVITE_DAYS * 86400000);
+    await invite.save();
+    const link = `${appUrl(req)}/?invite=${token}`;
+    const delivery = await deliverInvite(req, invite, link);
+    res.json({ success: true, data: { _id: invite._id, email: invite.email, expiresAt: invite.expiresAt, link, delivery } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/org/email-status — whether invites are emailed automatically (Org Admin)
+router.get('/email-status', requireOrgAdmin, (req, res) => {
+  res.json({ success: true, data: { configured: isEmailConfigured() } });
 });
 
 // DELETE /api/org/invites/:id — revoke (Org Admin)
