@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const router = express.Router({ mergeParams: true });
 const Task = require('../models/Task');
 const Sprint = require('../models/Sprint');
+const { reportTaskBlocker, resolveTaskBlockers } = require('../lib/blockerSync');
 const { forbid, canEditTask, canDeleteTask, isProjectParticipant, isManager } = require('../middleware/permissions');
 
 const STATUSES = ['To Do', 'In Progress', 'In Review', 'Done'];
@@ -59,6 +60,10 @@ router.post('/', async (req, res) => {
       title, description, assignee: assignee || null, priority, status, dueDate, dependency: dependency || null, tags, sprint: sprint || null,
     });
     await task.save();
+    // "Mark as blocked" records a real blocker so it appears on the Blockers page
+    if (req.body.hasBlocker === true) {
+      await reportTaskBlocker({ project: req.project, task, reason: req.body.blockerReason, user: req.user });
+    }
     res.status(201).json({ success: true, data: await populateTask(Task.findById(task._id)) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -72,7 +77,8 @@ router.patch('/:id', async (req, res) => {
     if (!task) return res.status(404).json({ success: false, message: 'Task not found.' });
     if (!canEditTask(req, task)) return forbid(res, 'You can only edit tasks assigned to you or created by you.');
 
-    const allowed = ['title', 'description', 'assignee', 'priority', 'status', 'dueDate', 'dependency', 'hasBlocker', 'tags', 'sprint'];
+    // hasBlocker isn't set directly: it follows the task's open blockers (handled below)
+    const allowed = ['title', 'description', 'assignee', 'priority', 'status', 'dueDate', 'dependency', 'tags', 'sprint'];
     const updates = {};
     allowed.forEach(key => { if (req.body[key] !== undefined) updates[key] = req.body[key] === '' ? null : req.body[key]; });
 
@@ -100,8 +106,19 @@ router.patch('/:id', async (req, res) => {
       updates.progress = { percent: Math.round(pct), updatedAt: new Date(), source: 'manual' };
     }
 
+    // Clearing "Blocked" resolves the task's blockers — a blocker decision, so Scrum Master+ only
+    const wantsBlocked = req.body.hasBlocker;
+    if (wantsBlocked === false && task.hasBlocker && !isManager(req)) {
+      return forbid(res, 'Only Scrum Masters and Project Admins can clear a blocker. Ask them to resolve it on the Blockers page.');
+    }
+
     Object.assign(task, updates);
     await task.save();
+    if (wantsBlocked === true && !task.hasBlocker) {
+      await reportTaskBlocker({ project: req.project, task, reason: req.body.blockerReason, user: req.user });
+    } else if (wantsBlocked === false && task.hasBlocker) {
+      await resolveTaskBlockers({ project: req.project, taskId: task._id });
+    }
     res.json({ success: true, data: await populateTask(Task.findById(task._id)) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

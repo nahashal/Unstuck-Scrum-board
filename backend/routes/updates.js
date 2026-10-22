@@ -4,6 +4,7 @@ const router = express.Router({ mergeParams: true });
 const DailyUpdate = require('../models/DailyUpdate');
 const Task = require('../models/Task');
 const Comment = require('../models/Comment');
+const { syncUpdateBlocker } = require('../lib/blockerSync');
 const { forbid, canEditOwnDaily, requireProjectRole } = require('../middleware/permissions');
 
 const populateUpdate = (q) => q
@@ -50,6 +51,8 @@ router.post('/', async (req, res) => {
     const update = await DailyUpdate.create({
       project: req.project._id, teamMember: req.user._id, yesterday, today, blockers, relatedTask: relatedTask || null,
     });
+    // Reported difficulties show up on the Blockers page straight away
+    await syncUpdateBlocker({ project: req.project, update, user: req.user });
     res.status(201).json({ success: true, data: await populateUpdate(DailyUpdate.findById(update._id)) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -80,6 +83,7 @@ router.patch('/:id', async (req, res) => {
       update.relatedTask = relatedTask || null;
     }
     await update.save();
+    if (blockers !== undefined || relatedTask !== undefined) await syncUpdateBlocker({ project: req.project, update, user: req.user });
     res.json({ success: true, data: await populateUpdate(DailyUpdate.findById(update._id)) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

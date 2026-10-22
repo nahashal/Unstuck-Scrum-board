@@ -17,6 +17,9 @@ const BlockerSchema = new mongoose.Schema({
   aiRaw: { type: mongoose.Schema.Types.Mixed, default: null }, // raw AI analysis snapshot
   confirmedBy: { type: String, default: 'user' },
   reportedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'TeamMember', default: null },
+  // Where the blocker came from: added on the Blockers page, confirmed AI finding,
+  // "Mark as blocked" on the Scrum Board, or the Blockers field of a daily update
+  source: { type: String, enum: ['manual', 'ai', 'task', 'daily_update'], default: 'manual' },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Blocker', BlockerSchema);

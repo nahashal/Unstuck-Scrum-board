@@ -139,6 +139,7 @@ function TaskForm({ task, members, tasks, sprints, onSubmit, onClose, loading })
     dueDate: task?.dueDate ? task.dueDate.split('T')[0] : '',
     dependency: task?.dependency?._id || '',
     hasBlocker: task?.hasBlocker || false,
+    blockerReason: '',
     sprint: task?.sprint?._id || sprints.find(s => s.status === 'active')?._id || '',
   });
 
@@ -219,9 +220,22 @@ function TaskForm({ task, members, tasks, sprints, onSubmit, onClose, loading })
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <input id="task-blocker-checkbox" type="checkbox" className="w-4 h-4 text-brand-600 rounded" checked={form.hasBlocker} onChange={e => set('hasBlocker', e.target.checked)} />
+        <input id="task-blocker-checkbox" type="checkbox" className="w-4 h-4 text-brand-600 rounded" checked={form.hasBlocker}
+          disabled={task?.hasBlocker && !can.canManageBlockers}
+          onChange={e => set('hasBlocker', e.target.checked)} />
         <label htmlFor="task-blocker-checkbox" className="text-sm text-slate-700 font-medium">Mark as blocked</label>
+        {task?.hasBlocker && (
+          <span className="text-xs text-slate-400">{can.canManageBlockers ? 'Unticking resolves its open blockers.' : 'A Scrum Master resolves this on the Blockers page.'}</span>
+        )}
       </div>
+      {form.hasBlocker && !task?.hasBlocker && (
+        <div>
+          <label className="label" htmlFor="task-blocker-reason">What's blocking it?</label>
+          <textarea id="task-blocker-reason" className="input resize-none" rows={2} value={form.blockerReason} onChange={e => set('blockerReason', e.target.value)}
+            placeholder="e.g. Waiting for API credentials from DevOps" />
+          <p className="text-xs text-slate-400 mt-1.5">This is added to the Blockers page so the Scrum Master can follow up.</p>
+        </div>
+      )}
       <div className="flex justify-end gap-3 pt-2">
         <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
         <button id="task-submit-btn" type="submit" className="btn-primary" disabled={loading}>

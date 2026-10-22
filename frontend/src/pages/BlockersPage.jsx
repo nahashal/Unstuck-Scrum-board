@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
-import { ShieldAlert, Plus, Pencil, CheckCircle2 } from 'lucide-react';
-import { blockersApi, teamApi, tasksApi } from '../api';
+import { ShieldAlert, Plus, Pencil, CheckCircle2, CheckSquare, ListPlus } from 'lucide-react';
+import { blockersApi, teamApi, tasksApi, actionsApi } from '../api';
+import { ActionForm } from './ActionsPage';
 import Alert from '../components/Alert';
 import Modal from '../components/Modal';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -10,7 +11,14 @@ import Comments from '../components/Comments';
 import { useSession } from '../context/SessionContext';
 import { statusConfig, formatDateTime, formatDate } from '../utils/helpers';
 
-function BlockerCard({ blocker, onEdit }) {
+const SOURCE_LABELS = {
+  task: 'From Scrum Board',
+  daily_update: 'From daily update',
+  ai: 'Confirmed AI finding',
+  manual: null,
+};
+
+function BlockerCard({ blocker, actions, onEdit, onAddAction }) {
   const { can } = useSession();
   const sc = statusConfig[blocker.status] || statusConfig['Open'];
   return (
@@ -35,6 +43,9 @@ function BlockerCard({ blocker, onEdit }) {
               </button>}
             </div>
           </div>
+          {SOURCE_LABELS[blocker.source] && (
+            <span className="text-[11px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full mt-1 mr-1 inline-block">{SOURCE_LABELS[blocker.source]}</span>
+          )}
           {blocker.affectedTask && (
             <span className="text-xs text-brand-700 bg-brand-50 border border-brand-100 px-2 py-0.5 rounded-full mt-1 inline-block">
               🔗 {blocker.affectedTask.taskId} — {blocker.affectedTask.title}
@@ -75,6 +86,30 @@ function BlockerCard({ blocker, onEdit }) {
             {formatDateTime(blocker.createdAt)}
           </span>
         </div>
+      </div>
+      {/* Follow-up action items for this blocker */}
+      <div className="mt-3 pt-3 border-t border-ink/[0.06]">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5"><CheckSquare className="w-3.5 h-3.5" /> Action items ({actions.length})</p>
+          {blocker.status !== 'Resolved' && (
+            <button className="btn-ghost text-xs ml-auto" onClick={() => onAddAction(blocker)}><ListPlus className="w-3.5 h-3.5" /> Create action item</button>
+          )}
+        </div>
+        {actions.length > 0 && (
+          <ul className="mt-2 space-y-1.5">
+            {actions.map(a => {
+              const asc = statusConfig[a.status] || statusConfig.Open;
+              return (
+                <li key={a._id} className="flex items-center gap-2 text-sm">
+                  <span className={`w-1.5 h-1.5 rounded-full ${asc.dot}`} />
+                  <span className={`flex-1 ${a.status === 'Resolved' ? 'line-through text-slate-400' : 'text-slate-700'}`}>{a.description}</span>
+                  {a.assignedTo && <span className="text-xs text-slate-400">{a.assignedTo.name}</span>}
+                  <span className={`badge ${asc.bg} ${asc.text}`}>{a.status}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
       <Comments targetType="blocker" targetId={blocker._id} compact />
     </div>
@@ -160,12 +195,17 @@ export default function BlockersPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editBlocker, setEditBlocker] = useState(null);
   const [filter, setFilter] = useState('All');
+  const [actions, setActions] = useState([]);
+  // Blocker an action item is being created for (opens the pre-filled form)
+  const [actionFor, setActionFor] = useState(null);
+  const [savingAction, setSavingAction] = useState(false);
 
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      const [bRes, tRes, mRes] = await Promise.all([blockersApi.getAll(), tasksApi.getAll(), teamApi.getAll()]);
+      const [bRes, tRes, mRes, aRes] = await Promise.all([blockersApi.getAll(), tasksApi.getAll(), teamApi.getAll(), actionsApi.getAll()]);
       setBlockers(bRes.data);
+      setActions(aRes.data);
       setTasks(tRes.data);
       setMembers(mRes.data);
     } catch (e) {
@@ -176,6 +216,21 @@ export default function BlockersPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const createAction = async (formData) => {
+    setSavingAction(true);
+    setError('');
+    try {
+      const res = await actionsApi.create(formData);
+      setActions(a => [res.data, ...a]);
+      setSuccess('Action item created. Track it on the Action Items page.');
+      setActionFor(null);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSavingAction(false);
+    }
+  };
 
   const handleSubmit = async (formData) => {
     setSaving(true);
@@ -238,7 +293,7 @@ export default function BlockersPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {filtered.map(b => <BlockerCard key={b._id} blocker={b} onEdit={(bl) => { setEditBlocker(bl); setModalOpen(true); }} />)}
+          {filtered.map(b => <BlockerCard key={b._id} blocker={b} actions={actions.filter(a => a.relatedBlocker?._id === b._id)} onAddAction={setActionFor} onEdit={(bl) => { setEditBlocker(bl); setModalOpen(true); }} />)}
         </div>
       )}
 
@@ -251,6 +306,25 @@ export default function BlockersPage() {
           onClose={() => { setModalOpen(false); setEditBlocker(null); }}
           loading={saving}
         />
+      </Modal>
+
+      <Modal isOpen={!!actionFor} onClose={() => setActionFor(null)} title="New Action Item" size="lg">
+        {actionFor && (
+          <ActionForm
+            initial={{
+              description: actionFor.suggestedAction || `Resolve: ${actionFor.title}`,
+              relatedBlocker: actionFor._id,
+              relatedTask: actionFor.affectedTask?._id || '',
+              assignedTo: actionFor.owner?._id || '',
+            }}
+            blockers={blockers}
+            tasks={tasks}
+            members={members}
+            onSubmit={createAction}
+            onClose={() => setActionFor(null)}
+            loading={savingAction}
+          />
+        )}
       </Modal>
     </div>
   );

@@ -81,15 +81,16 @@ function ActionCard({ action, onEdit }) {
   );
 }
 
-function ActionForm({ action, blockers, tasks, members, onSubmit, onClose, loading }) {
+// Exported so the Blockers page can open it pre-filled from a blocker (`initial`)
+export function ActionForm({ action, initial, blockers, tasks, members, onSubmit, onClose, loading }) {
   const { user, can } = useSession();
   // Developers can only assign action items to themselves
   const assignable = can.canAssignOthers ? members : members.filter(m => m._id === user._id || m._id === action?.assignedTo?._id);
   const [form, setForm] = useState({
-    description: action?.description || '',
-    relatedBlocker: action?.relatedBlocker?._id || '',
-    relatedTask: action?.relatedTask?._id || '',
-    assignedTo: action?.assignedTo?._id || '',
+    description: action?.description || initial?.description || '',
+    relatedBlocker: action?.relatedBlocker?._id || initial?.relatedBlocker || '',
+    relatedTask: action?.relatedTask?._id || initial?.relatedTask || '',
+    assignedTo: action?.assignedTo?._id || (assignable.some(m => m._id === initial?.assignedTo) ? initial.assignedTo : ''),
     deadline: action?.deadline ? action.deadline.split('T')[0] : '',
     status: action?.status || 'Open',
     notes: action?.notes || '',

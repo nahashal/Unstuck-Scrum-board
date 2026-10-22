@@ -182,7 +182,9 @@ function MorningTab({ tasks, onNavigateToAI, notify }) {
       const res = await updatesApi.create(data);
       setLastUpdate(res.data);
       setUpdates(u => [res.data, ...u]);
-      notify('success', 'Daily update submitted successfully!');
+      notify('success', data.blockers?.trim()
+        ? 'Daily update submitted. Your blocker was added to the Blockers page so the Scrum Master can follow up.'
+        : 'Daily update submitted successfully!');
       return true;
     } catch (e) { notify('error', e.message); return false; } finally { setSubmitting(false); }
   };

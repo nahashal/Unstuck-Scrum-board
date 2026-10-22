@@ -4,6 +4,7 @@ const router = express.Router({ mergeParams: true });
 const Blocker = require('../models/Blocker');
 const Task = require('../models/Task');
 const DailyUpdate = require('../models/DailyUpdate');
+const { syncTaskBlockedFlag } = require('../lib/blockerSync');
 const { forbid, isManager, isProjectParticipant, requireProjectRole } = require('../middleware/permissions');
 
 const STATUSES = ['Open', 'In Progress', 'Resolved'];
@@ -23,12 +24,6 @@ async function validateRefs(req, { affectedTask, owner }) {
   return null;
 }
 
-// Keeps the task's "Blocked" flag in sync with its unresolved blockers
-async function syncTaskBlockedFlag(taskId) {
-  if (!taskId) return;
-  const open = await Blocker.countDocuments({ affectedTask: taskId, status: { $ne: 'Resolved' } });
-  await Task.updateOne({ _id: taskId }, { hasBlocker: open > 0 });
-}
 
 // GET /api/projects/:projectId/blockers
 router.get('/', async (req, res) => {
@@ -73,6 +68,7 @@ router.post('/', async (req, res) => {
       project: req.project._id, title, description, affectedTask: affectedTask || null, relatedUpdate: relatedUpdate || null,
       impact, owner: owner || null, suggestedAction, aiRaw, reportedBy: req.user._id,
       confirmedBy: findingId ? req.user.name : 'reported',
+      source: findingId ? 'ai' : 'manual',
     });
 
     await syncTaskBlockedFlag(blocker.affectedTask);
