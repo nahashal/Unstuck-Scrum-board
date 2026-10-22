@@ -36,8 +36,10 @@ async function loadProject(req, res, next) {
     // Same 404 for "doesn't exist" and "not yours", so other orgs' projects can't be probed
     const role = project ? projectRoleFor(req.user, project) : null;
     if (!project || !role) return res.status(404).json({ success: false, message: 'Project not found.' });
-    if (project.status === 'archived' && req.method !== 'GET') {
-      return forbid(res, 'This project is archived and read-only.');
+    // Archived projects are read-only — except the project settings themselves, so it can be restored
+    const isSettingsUpdate = req.method === 'PATCH' && (req.path === '/' || req.path === '');
+    if (project.status === 'archived' && req.method !== 'GET' && !isSettingsUpdate) {
+      return forbid(res, 'This project is archived and read-only. A Project Admin can restore it in Project Settings.');
     }
     req.project = project;
     req.projectRole = role;

@@ -78,15 +78,17 @@ function DetailsTab({ project, setProject, notify }) {
         </div>
         <button className="btn-secondary" onClick={toggleArchive}><Archive className="w-4 h-4" />{project.status === 'archived' ? 'Restore' : 'Archive'}</button>
       </div>
-      {can.isOrgAdmin && (
-        <div className="card flex flex-wrap items-center gap-3 justify-between border border-bubble-200">
-          <div>
-            <p className="font-semibold text-bubble-700">Delete project</p>
-            <p className="text-xs text-slate-500">Permanently removes the project and everything in it. Only Organization Admins can do this.</p>
-          </div>
-          <button className="btn-danger" onClick={() => setDeleting(true)}><Trash2 className="w-4 h-4" /> Delete</button>
+      <div className="card flex flex-wrap items-center gap-3 justify-between border border-bubble-200">
+        <div>
+          <p className="font-semibold text-bubble-700">Delete project</p>
+          <p className="text-xs text-slate-500">
+            {can.isOrgAdmin
+              ? 'Permanently removes the project and everything in it.'
+              : 'Only Organization Admins can delete a project. Ask yours, or archive it instead.'}
+          </p>
         </div>
-      )}
+        <button className="btn-danger" disabled={!can.isOrgAdmin} onClick={() => setDeleting(true)}><Trash2 className="w-4 h-4" /> Delete</button>
+      </div>
       <DeleteProjectModal
         project={deleting ? project : null}
         onClose={() => setDeleting(false)}
