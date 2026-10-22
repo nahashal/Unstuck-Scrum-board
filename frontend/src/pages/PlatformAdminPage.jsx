@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Globe2, Building2, Users, SlidersHorizontal, Search, ShieldCheck, Power } from 'lucide-react';
+import { Globe2, Building2, Users, SlidersHorizontal, Search, ShieldCheck, Power, Trash2 } from 'lucide-react';
 import { platformApi } from '../api';
 import { useSession } from '../context/SessionContext';
 import Alert from '../components/Alert';
 import Avatar from '../components/Avatar';
-import LoadingSpinner from '../components/LoadingSpinner';
+import LoadingSpinner, { InlineLoader } from '../components/LoadingSpinner';
+import Modal from '../components/Modal';
 import { RoleBadge, EmptyState } from '../components/RoleBits';
 import { formatDate } from '../utils/helpers';
 
@@ -24,7 +25,23 @@ function Stat({ label, value, tone }) {
 }
 
 function OrgsTab({ notify }) {
+  const { user, refreshSession } = useSession();
   const [orgs, setOrgs] = useState(null);
+  const [deleting, setDeleting] = useState(null);
+  const [confirmName, setConfirmName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const askDelete = (o) => { setDeleting(o); setConfirmName(''); };
+  const remove = async () => {
+    setBusy(true);
+    try {
+      await platformApi.deleteOrganization(deleting._id, confirmName);
+      setOrgs(list => list.filter(x => x._id !== deleting._id));
+      notify('success', `${deleting.name} and all of its data were deleted.`);
+      // Deleting your own organization changes what you can access
+      if (user.organization?._id === deleting._id) await refreshSession();
+      setDeleting(null);
+    } catch (e) { notify('error', e.message); } finally { setBusy(false); }
+  };
   useEffect(() => { platformApi.organizations().then(r => setOrgs(r.data)).catch(e => notify('error', e.message)); }, [notify]);
   const toggle = async (o) => {
     const status = o.status === 'active' ? 'suspended' : 'active';
@@ -59,13 +76,36 @@ function OrgsTab({ notify }) {
                 <td className="px-4 py-3">{o.projectCount}</td>
                 <td className="px-4 py-3"><span className={`badge ${o.status === 'active' ? 'bg-mint-100 text-mint-700' : 'bg-bubble-100 text-bubble-700'}`}>{o.status}</span></td>
                 <td className="px-4 py-3 text-right">
-                  <button className="btn-ghost text-xs" onClick={() => toggle(o)}><Power className="w-3.5 h-3.5" />{o.status === 'active' ? 'Suspend' : 'Reactivate'}</button>
+                  <div className="flex justify-end gap-1">
+                    <button className="btn-ghost text-xs" onClick={() => toggle(o)}><Power className="w-3.5 h-3.5" />{o.status === 'active' ? 'Suspend' : 'Reactivate'}</button>
+                    <button className="btn-ghost text-xs hover:!bg-bubble-50 hover:!text-bubble-700" onClick={() => askDelete(o)}><Trash2 className="w-3.5 h-3.5" />Delete</button>
+                  </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      <Modal isOpen={!!deleting} onClose={() => setDeleting(null)} title="Delete organization" size="sm">
+        {deleting && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              This permanently deletes <strong>{deleting.name}</strong> with its {deleting.projectCount} project{deleting.projectCount === 1 ? '' : 's'}, teams, tasks, updates, blockers, action items and invites. <strong>This cannot be undone.</strong>
+            </p>
+            <p className="text-sm text-slate-600">Its {deleting.memberCount} member account{deleting.memberCount === 1 ? '' : 's'} are kept but leave the organization; they can start a new one or be invited elsewhere.</p>
+            <div>
+              <label className="label" htmlFor="confirm-org-name">Type <span className="normal-case font-mono text-ink">{deleting.name}</span> to confirm</label>
+              <input id="confirm-org-name" className="input" value={confirmName} onChange={e => setConfirmName(e.target.value)} autoComplete="off" />
+            </div>
+            <div className="flex justify-end gap-3">
+              <button className="btn-secondary" onClick={() => setDeleting(null)}>Cancel</button>
+              <button className="btn-danger" disabled={busy || confirmName.trim() !== deleting.name} onClick={remove}>
+                {busy ? <InlineLoader size="sm" /> : <Trash2 className="w-4 h-4" />} Delete forever
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
@@ -79,12 +119,25 @@ function AccessTab({ notify }) {
   }, [notify]);
   useEffect(() => { search(''); }, [search]);
 
+  const [deleting, setDeleting] = useState(null);
+  const [busy, setBusy] = useState(false);
+
   const update = async (u, data, msg) => {
     try {
       const res = await platformApi.updateUser(u._id, data);
       setUsers(list => list.map(x => x._id === u._id ? res.data : x));
       notify('success', msg);
     } catch (e) { notify('error', e.message); }
+  };
+
+  const remove = async () => {
+    setBusy(true);
+    try {
+      await platformApi.deleteUser(deleting._id);
+      setUsers(list => list.filter(x => x._id !== deleting._id));
+      notify('success', `${deleting.name}'s account was deleted.`);
+      setDeleting(null);
+    } catch (e) { notify('error', e.message); } finally { setBusy(false); }
   };
 
   return (
@@ -96,7 +149,7 @@ function AccessTab({ notify }) {
         </div>
         <button className="btn-primary">Search</button>
       </form>
-      <p className="text-xs text-slate-400">{q ? 'Search results' : 'Showing current Platform Admins. Search to find anyone else.'}</p>
+      <p className="text-xs text-slate-400">{q ? 'Search results' : 'Showing everyone (up to 50). Search to narrow it down.'}</p>
       {!users ? <LoadingSpinner /> : users.length === 0 ? <EmptyState icon={Users} title="Nobody found" /> : (
         <div className="card p-0 overflow-hidden">
           {users.map(u => (
@@ -118,12 +171,32 @@ function AccessTab({ notify }) {
                   <button className="btn-ghost text-xs" onClick={() => update(u, { status: u.status === 'active' ? 'deactivated' : 'active' }, `${u.name} ${u.status === 'active' ? 'deactivated' : 'reactivated'}.`)}>
                     <Power className="w-3.5 h-3.5" />{u.status === 'active' ? 'Deactivate' : 'Reactivate'}
                   </button>
+                  <button className="btn-ghost text-xs hover:!bg-bubble-50 hover:!text-bubble-700" onClick={() => setDeleting(u)}>
+                    <Trash2 className="w-3.5 h-3.5" />Delete
+                  </button>
                 </div>
               )}
             </div>
           ))}
         </div>
       )}
+      <Modal isOpen={!!deleting} onClose={() => setDeleting(null)} title="Delete account" size="sm">
+        {deleting && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Permanently delete <strong>{deleting.name}</strong> ({deleting.email})? They are signed out immediately and removed from all teams and projects.
+              Their open tasks and action items become unassigned; their past updates stay as a former member. <strong>This cannot be undone.</strong>
+            </p>
+            <p className="text-xs text-slate-400">To block someone temporarily instead, use Deactivate.</p>
+            <div className="flex justify-end gap-3">
+              <button className="btn-secondary" onClick={() => setDeleting(null)}>Cancel</button>
+              <button className="btn-danger" disabled={busy} onClick={remove}>
+                {busy ? <InlineLoader size="sm" /> : <Trash2 className="w-4 h-4" />} Delete account
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

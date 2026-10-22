@@ -5,6 +5,16 @@ const Organization = require('../models/Organization');
 const TeamMember = require('../models/TeamMember');
 const Project = require('../models/Project');
 const PlatformSettings = require('../models/PlatformSettings');
+const Team = require('../models/Team');
+const Invite = require('../models/Invite');
+const Task = require('../models/Task');
+const DailyUpdate = require('../models/DailyUpdate');
+const EveningUpdate = require('../models/EveningUpdate');
+const Blocker = require('../models/Blocker');
+const ActionItem = require('../models/ActionItem');
+const Sprint = require('../models/Sprint');
+const Comment = require('../models/Comment');
+const StandupSummary = require('../models/StandupSummary');
 const { requirePlatformAdmin, sameId } = require('../middleware/permissions');
 
 // Platform Admins manage organizations and access — never the contents of projects
@@ -57,6 +67,35 @@ router.patch('/organizations/:id', async (req, res) => {
   }
 });
 
+// DELETE /api/platform/organizations/:id — permanently deletes the organization and everything in it.
+// Body must repeat the organization's name. Member accounts are kept but detached, so they can start or join another org.
+router.delete('/organizations/:id', async (req, res) => {
+  try {
+    const org = mongoose.isValidObjectId(req.params.id) ? await Organization.findById(req.params.id) : null;
+    if (!org) return res.status(404).json({ success: false, message: 'Organization not found.' });
+    if (String(req.body?.confirmName || '').trim() !== org.name) {
+      return res.status(400).json({ success: false, message: 'Type the organization name exactly to confirm deletion.' });
+    }
+    const projectIds = (await Project.find({ organization: org._id }).select('_id')).map(p => p._id);
+    const byProject = { project: { $in: projectIds } };
+    await Promise.all([
+      Task.deleteMany(byProject), DailyUpdate.deleteMany(byProject), EveningUpdate.deleteMany(byProject),
+      Blocker.deleteMany(byProject), ActionItem.deleteMany(byProject), Sprint.deleteMany(byProject),
+      Comment.deleteMany(byProject), StandupSummary.deleteMany(byProject),
+    ]);
+    await Promise.all([
+      Project.deleteMany({ organization: org._id }),
+      Team.deleteMany({ organization: org._id }),
+      Invite.deleteMany({ organization: org._id }),
+      TeamMember.updateMany({ organization: org._id }, { organization: null, orgRole: 'member', lastProject: null }),
+    ]);
+    await org.deleteOne();
+    res.json({ success: true, data: { deletedProjects: projectIds.length } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // GET/PATCH /api/platform/settings
 router.get('/settings', async (req, res) => {
   try {
@@ -88,7 +127,7 @@ router.get('/users', async (req, res) => {
     const q = String(req.query.q || '').trim();
     const filter = q
       ? { $or: [{ name: new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') }, { email: new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') }] }
-      : { platformRole: 'admin' };
+      : {};
     const users = await TeamMember.find(filter).select('name email status platformRole orgRole organization')
       .populate('organization', 'name').sort({ name: 1 }).limit(50).lean();
     res.json({ success: true, data: users });
@@ -123,6 +162,42 @@ router.patch('/users/:id', async (req, res) => {
     }
     await user.save();
     res.json({ success: true, data: await TeamMember.findById(user._id).select('name email status platformRole orgRole organization').populate('organization', 'name') });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// DELETE /api/platform/users/:id — permanently deletes an account. Their past updates stay (shown as a
+// former member); open tasks and action items become unassigned; they lose access immediately.
+router.delete('/users/:id', async (req, res) => {
+  try {
+    const user = mongoose.isValidObjectId(req.params.id) ? await TeamMember.findById(req.params.id) : null;
+    if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
+    if (sameId(user._id, req.user._id)) return res.status(400).json({ success: false, message: 'You cannot delete your own account.' });
+    const envAdmins = (process.env.PLATFORM_ADMIN_EMAILS || '').toLowerCase().split(',').map(e => e.trim());
+    if (envAdmins.includes(user.email)) {
+      return res.status(400).json({ success: false, message: 'This person is a Platform Admin through PLATFORM_ADMIN_EMAILS. Remove them there first.' });
+    }
+    // Don't leave an organization with members but no admin
+    if (user.organization && user.orgRole === 'org_admin') {
+      const [otherAdmins, otherMembers] = await Promise.all([
+        TeamMember.countDocuments({ organization: user.organization, orgRole: 'org_admin', status: 'active', _id: { $ne: user._id } }),
+        TeamMember.countDocuments({ organization: user.organization, status: 'active', _id: { $ne: user._id } }),
+      ]);
+      if (otherAdmins === 0 && otherMembers > 0) {
+        return res.status(400).json({ success: false, message: `${user.name} is the only Organization Admin. Make someone else an admin first, or delete the whole organization.` });
+      }
+    }
+    const projectIds = (await Project.find({ 'members.member': user._id }).select('_id')).map(p => p._id);
+    await Promise.all([
+      Team.updateMany({ members: user._id }, { $pull: { members: user._id } }),
+      Project.updateMany({ 'members.member': user._id }, { $pull: { members: { member: user._id } } }),
+      Task.updateMany({ assignee: user._id, status: { $ne: 'Done' } }, { assignee: null }),
+      ActionItem.updateMany({ assignedTo: user._id, status: { $ne: 'Resolved' } }, { assignedTo: null }),
+      Invite.updateMany({ email: user.email, acceptedAt: null, revokedAt: null }, { revokedAt: new Date() }),
+    ]);
+    await user.deleteOne();
+    res.json({ success: true, data: { removedFromProjects: projectIds.length } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
